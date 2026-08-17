@@ -2,8 +2,9 @@ import { FlightStore } from "./flightStore.js";
 import { HUDRenderer } from "./hudUI.js";
 
 const CONFIG = {
-  HOME_LAT: 33.0441,
-  HOME_LON: -96.9975,
+  PROXY_BASE_URL: "https://adsb-proxy.arv0019.workers.dev",
+  HOME_LAT: 33.03675589170987,
+  HOME_LON: -97.01750419304086,
   HOME_ALT_FT: 518,
   OFFSET_BOUNDS_NM: { NORTH: 15.0, SOUTH: 4.0, EAST: 8.0, WEST: 8.0 },
   MIN_ELEVATION_DEG: 0.0, // Keep 0.0 for wide testing; set to 10.0 for backyard window
@@ -11,7 +12,7 @@ const CONFIG = {
   MAX_MISSED_CYCLES: 2,
   FETCH_RADIUS_NM: 20,
   POLL_INTERVAL_MS: 20000, // Relaxed to 20s to prevent HTTP 429 rate limits
-  FETCH_TIMEOUT_MS: 6000,
+  FETCH_TIMEOUT_MS: 10000, // Headroom for VPN/high-latency connections
   STORAGE_KEY: "backyard_hud_game_state_v1"
 };
 
@@ -36,24 +37,16 @@ const renderer = new HUDRenderer(
 );
 
 async function fetchFlightData(signal) {
-  const pointPath = `/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
-
-  // Primary: airplanes.live direct endpoint
-  try {
-    const res = await fetch(`https://api.airplanes.live${pointPath}`, { signal });
-    if (res.status === 429) throw new Error("API Rate Limited (429)");
-    if (res.ok) return await res.json();
-  } catch (err) {
-    if (err.name === "AbortError" || err.message.includes("429")) throw err;
-  }
-
-  // Fallback: adsb.lol via AllOrigins proxy with cache busting
-  const targetUrl = `https://api.adsb.lol${pointPath}`;
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&timestamp=${Date.now()}`;
-  const resFallback = await fetch(proxyUrl, { signal });
-  if (resFallback.status === 429) throw new Error("Proxy Rate Limited (429)");
-  if (!resFallback.ok) throw new Error(`HTTP ${resFallback.status}`);
-  return await resFallback.json();
+  // Single hop to our own Cloudflare Worker, which handles the
+  // airplanes.live -> adsb.lol failover and edge caching server-side.
+  // Keeps the browser to one request instead of two sequential ones
+  // (previously including a third-party CORS proxy for the fallback),
+  // which matters most on high-latency connections like a VPN.
+  const pointPath = `/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+  const res = await fetch(`${CONFIG.PROXY_BASE_URL}${pointPath}`, { signal });
+  if (res.status === 429) throw new Error("API Rate Limited (429)");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
 }
 
 async function pollTelemetry() {
