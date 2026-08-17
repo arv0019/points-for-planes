@@ -6,7 +6,7 @@ const CONFIG = {
   HOME_LON: -96.9975,
   HOME_ALT_FT: 518,
   OFFSET_BOUNDS_NM: { NORTH: 15.0, SOUTH: 4.0, EAST: 8.0, WEST: 8.0 },
-  MIN_ELEVATION_DEG: 0.0, // Set to 0.0 for wide-area testing; increase to 10.0 for actual backyard filtering
+  MIN_ELEVATION_DEG: 0.0, // Set to 0.0 for wide-area testing; set to 10.0 for actual backyard filtering
   EXIT_ELEVATION_DEG: 0.0,
   MAX_MISSED_CYCLES: 2,
   FETCH_RADIUS_NM: 20,
@@ -36,19 +36,18 @@ const renderer = new HUDRenderer(
 );
 
 async function fetchFlightData(signal) {
-  // Primary endpoint: airplanes.live REST API (serves explicit Access-Control-Allow-Origin: * for browser JS)
-  const primaryUrl = `https://api.airplanes.live/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
-  
+  const pointPath = `/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+
+  // Primary: airplanes.live direct point search
   try {
-    const res = await fetch(primaryUrl, { signal, headers: { "Accept": "application/json" } });
+    const res = await fetch(`https://api.airplanes.live${pointPath}`, { signal });
     if (res.ok) return await res.json();
   } catch (err) {
     if (err.name === "AbortError") throw err;
-    console.warn("Primary API direct fetch blocked by WebKit/CORS. Attempting proxy fallback...", err.message);
   }
 
-  // Fallback endpoint: adsb.lol via CORS proxy to pass Safari WebKit origin policy checks
-  const targetUrl = `https://api.adsb.lol/v2/lat/${CONFIG.HOME_LAT}/lon/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+  // Fallback: adsb.lol routed via corsproxy.io to bypass WebKit origin checks
+  const targetUrl = `https://api.adsb.lol${pointPath}`;
   const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
   const resFallback = await fetch(proxyUrl, { signal });
   if (!resFallback.ok) throw new Error(`HTTP ${resFallback.status}`);
