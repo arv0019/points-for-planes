@@ -40,7 +40,9 @@ async function pollTelemetry() {
   isPolling = true;
 
   const timestamp = new Date().toLocaleTimeString();
-  const url = `https://api.adsb.lol/v2/lat/${CONFIG.HOME_LAT}/lon/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+  // Replace the adsb.lol URL line in app.js:
+  const url = `https://api.airplanes.live/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+// this API did not work -  const url = `https://api.adsb.lol/v2/lat/${CONFIG.HOME_LAT}/lon/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.FETCH_TIMEOUT_MS);
 
