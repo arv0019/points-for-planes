@@ -6,12 +6,12 @@ const CONFIG = {
   HOME_LON: -96.9975,
   HOME_ALT_FT: 518,
   OFFSET_BOUNDS_NM: { NORTH: 15.0, SOUTH: 4.0, EAST: 8.0, WEST: 8.0 },
-  MIN_ELEVATION_DEG: 0.0, // Set to 0.0 for wide-area testing; set to 10.0 for actual backyard filtering
+  MIN_ELEVATION_DEG: 0.0, // Keep 0.0 for wide testing; set to 10.0 for backyard window
   EXIT_ELEVATION_DEG: 0.0,
   MAX_MISSED_CYCLES: 2,
   FETCH_RADIUS_NM: 20,
-  POLL_INTERVAL_MS: 10000,
-  FETCH_TIMEOUT_MS: 5000,
+  POLL_INTERVAL_MS: 20000, // Relaxed to 20s to prevent HTTP 429 rate limits
+  FETCH_TIMEOUT_MS: 6000,
   STORAGE_KEY: "backyard_hud_game_state_v1"
 };
 
@@ -38,18 +38,20 @@ const renderer = new HUDRenderer(
 async function fetchFlightData(signal) {
   const pointPath = `/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
 
-  // Primary: airplanes.live direct point search
+  // Primary: airplanes.live direct endpoint
   try {
     const res = await fetch(`https://api.airplanes.live${pointPath}`, { signal });
+    if (res.status === 429) throw new Error("API Rate Limited (429)");
     if (res.ok) return await res.json();
   } catch (err) {
-    if (err.name === "AbortError") throw err;
+    if (err.name === "AbortError" || err.message.includes("429")) throw err;
   }
 
-  // Fallback: adsb.lol routed via corsproxy.io to bypass WebKit origin checks
+  // Fallback: adsb.lol via AllOrigins proxy with cache busting
   const targetUrl = `https://api.adsb.lol${pointPath}`;
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&timestamp=${Date.now()}`;
   const resFallback = await fetch(proxyUrl, { signal });
+  if (resFallback.status === 429) throw new Error("Proxy Rate Limited (429)");
   if (!resFallback.ok) throw new Error(`HTTP ${resFallback.status}`);
   return await resFallback.json();
 }
@@ -88,8 +90,8 @@ async function pollTelemetry() {
     }
   } catch (err) {
     if (statusEl) {
-      const msg = err.name === "AbortError" ? "Fetch Timeout (5s)" : err.message;
-      statusEl.innerText = `Network/API Error: ${msg} · Retrying... (${timestamp})`;
+      const msg = err.name === "AbortError" ? "Fetch Timeout" : err.message;
+      statusEl.innerText = `Network/API Error: ${msg} · Pausing for next cycle... (${timestamp})`;
       statusEl.className = "text-center py-12 text-amber-400 font-mono text-xs px-4";
     }
   } finally {
