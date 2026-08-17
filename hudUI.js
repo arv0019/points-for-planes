@@ -15,7 +15,7 @@ export class HUDRenderer {
     }
 
     const toast = document.createElement("div");
-    const styles = type === "warning" 
+    const styles = type === "warning"
       ? "bg-amber-950/95 text-amber-200 border-amber-800"
       : "bg-cyan-950/95 text-cyan-200 border-cyan-800";
 
@@ -41,7 +41,7 @@ export class HUDRenderer {
   updateScoreboard(state) {
     const elToday = document.getElementById("score-today");
     const elLifetime = document.getElementById("score-lifetime");
-    
+
     const todayPoints = state?.today?.points ?? 0;
     const lifetimePoints = state?.lifetime?.points ?? 0;
 
@@ -192,7 +192,7 @@ export class HUDRenderer {
       <div class="flex justify-between items-start mb-2.5">
         <div class="min-w-0 pr-2">
           <div class="text-lg sm:text-xl font-black text-cyan-300 flex items-center gap-1.5 truncate">
-            ${ac.callsign} 
+            ${ac.callsign}
             <span class="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded font-normal shrink-0">${ac.type}</span>
           </div>
           <div class="text-xs text-slate-300 truncate">${ac.operator}</div>

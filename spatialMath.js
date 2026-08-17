@@ -6,7 +6,7 @@ export function calculateFlatDistanceFt(lat1, lon1, lat2, lon2) {
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-  
+
   const x = Δλ * Math.cos((φ1 + φ2) / 2);
   const y = φ2 - φ1;
   return Math.sqrt(x * x + y * y) * EARTH_RADIUS_FEET;

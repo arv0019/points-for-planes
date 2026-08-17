@@ -5,22 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Backyard Flight HUD</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    // Capture resource load 404s and module execution crashes
-    window.addEventListener('error', function(e) {
-      const status = document.getElementById('board-status');
-      if (status) {
-        const src = e.target && e.target.src ? e.target.src.split('/').pop() : 'script';
-        status.innerText = 'SCRIPT LOAD 404: Could not load ' + src;
-        status.className = 'text-center py-12 text-red-400 font-mono text-xs px-4';
-      }
-    }, true);
-  </script>
   <style>
-    .card-enter { animation: fadeIn 300ms cubic-bezier(0.2, 0, 0, 1) forwards; }
-    .card-exit { animation: fadeOut 300ms cubic-bezier(0.2, 0, 0, 1) forwards; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(8px); } }
+    .card-enter {
+      animation: fadeIn 300ms cubic-bezier(0.2, 0, 0, 1) forwards;
+    }
+    .card-exit {
+      animation: fadeOut 300ms cubic-bezier(0.2, 0, 0, 1) forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(8px); }
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased p-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">

@@ -6,13 +6,19 @@ const CONFIG = {
   HOME_LON: -96.9975,
   HOME_ALT_FT: 518,
   OFFSET_BOUNDS_NM: { NORTH: 15.0, SOUTH: 4.0, EAST: 8.0, WEST: 8.0 },
-  MIN_ELEVATION_DEG: 0.0, // Keep 0.0 for wide testing; set to 10.0 for backyard window
-  EXIT_ELEVATION_DEG: 0.0,
+  MIN_ELEVATION_DEG: 10.0, // Entry threshold for the backyard window
+  EXIT_ELEVATION_DEG: 5.0, // Exit threshold — kept below entry to create a
+                            // hysteresis gap and prevent flapping when a
+                            // contact hovers near the boundary.
   MAX_MISSED_CYCLES: 2,
   FETCH_RADIUS_NM: 20,
-  POLL_INTERVAL_MS: 20000, // Relaxed to 20s to prevent HTTP 429 rate limits
+  POLL_INTERVAL_MS: 12000, // Matches the Worker's edge-cache TTL — mainly
+                            // relevant for coalescing multi-tab/device polls,
+                            // not for throttling a single tab's own requests.
   FETCH_TIMEOUT_MS: 6000,
-  STORAGE_KEY: "backyard_hud_game_state_v1"
+  STORAGE_KEY: "backyard_hud_game_state_v1",
+
+  PROXY_BASE_URL: "https://adsb-proxy.arv0019.workers.dev"
 };
 
 const store = new FlightStore(CONFIG);
@@ -36,24 +42,19 @@ const renderer = new HUDRenderer(
 );
 
 async function fetchFlightData(signal) {
-  const pointPath = `/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+  // NOTE: no /v2 prefix here — the Worker prepends that itself and only
+  // forwards /point/lat/lon/radius paths. See adsb-proxy-worker.js.
+  const pointPath = `/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+  const url = `${CONFIG.PROXY_BASE_URL}${pointPath}`;
 
-  // Primary: airplanes.live direct endpoint
-  try {
-    const res = await fetch(`https://api.airplanes.live${pointPath}`, { signal });
-    if (res.status === 429) throw new Error("API Rate Limited (429)");
-    if (res.ok) return await res.json();
-  } catch (err) {
-    if (err.name === "AbortError" || err.message.includes("429")) throw err;
+  const res = await fetch(url, { signal });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ? `${body.error} (${res.status})` : `HTTP ${res.status}`);
   }
 
-  // Fallback: adsb.lol via AllOrigins proxy with cache busting
-  const targetUrl = `https://api.adsb.lol${pointPath}`;
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&timestamp=${Date.now()}`;
-  const resFallback = await fetch(proxyUrl, { signal });
-  if (resFallback.status === 429) throw new Error("Proxy Rate Limited (429)");
-  if (!resFallback.ok) throw new Error(`HTTP ${resFallback.status}`);
-  return await resFallback.json();
+  return await res.json();
 }
 
 async function pollTelemetry() {
@@ -71,7 +72,7 @@ async function pollTelemetry() {
     const valid = (data.ac || []).filter(
       ac => ac && Number.isFinite(ac.lat) && Number.isFinite(ac.lon) && ac.alt_baro !== "ground"
     );
-    
+
     const activeFlights = store.processTelemetry(valid);
     renderer.renderBoard(activeFlights);
 
@@ -95,6 +96,7 @@ async function pollTelemetry() {
       statusEl.className = "text-center py-12 text-amber-400 font-mono text-xs px-4";
     }
   } finally {
+    clearTimeout(timeoutId);
     isPolling = false;
   }
 }
