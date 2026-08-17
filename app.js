@@ -6,7 +6,7 @@ const CONFIG = {
   HOME_LON: -96.9975,
   HOME_ALT_FT: 518,
   OFFSET_BOUNDS_NM: { NORTH: 15.0, SOUTH: 4.0, EAST: 8.0, WEST: 8.0 },
-  MIN_ELEVATION_DEG: 0.0, // Set to 0.0 for wide-area testing
+  MIN_ELEVATION_DEG: 0.0, // Set to 0.0 for wide-area testing; increase to 10.0 for actual backyard filtering
   EXIT_ELEVATION_DEG: 0.0,
   MAX_MISSED_CYCLES: 2,
   FETCH_RADIUS_NM: 20,
@@ -35,34 +35,53 @@ const renderer = new HUDRenderer(
   }
 );
 
+async function fetchFlightData(signal) {
+  // Primary endpoint: airplanes.live REST API (serves explicit Access-Control-Allow-Origin: * for browser JS)
+  const primaryUrl = `https://api.airplanes.live/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+  
+  try {
+    const res = await fetch(primaryUrl, { signal, headers: { "Accept": "application/json" } });
+    if (res.ok) return await res.json();
+  } catch (err) {
+    if (err.name === "AbortError") throw err;
+    console.warn("Primary API direct fetch blocked by WebKit/CORS. Attempting proxy fallback...", err.message);
+  }
+
+  // Fallback endpoint: adsb.lol via CORS proxy to pass Safari WebKit origin policy checks
+  const targetUrl = `https://api.adsb.lol/v2/lat/${CONFIG.HOME_LAT}/lon/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+  const resFallback = await fetch(proxyUrl, { signal });
+  if (!resFallback.ok) throw new Error(`HTTP ${resFallback.status}`);
+  return await resFallback.json();
+}
+
 async function pollTelemetry() {
   if (isPolling) return;
   isPolling = true;
 
   const timestamp = new Date().toLocaleTimeString();
-  // Replace the adsb.lol URL line in app.js:
-  const url = `https://api.airplanes.live/v2/point/${CONFIG.HOME_LAT}/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
-// this API did not work -  const url = `https://api.adsb.lol/v2/lat/${CONFIG.HOME_LAT}/lon/${CONFIG.HOME_LON}/${CONFIG.FETCH_RADIUS_NM}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.FETCH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const data = await fetchFlightData(controller.signal);
     clearTimeout(timeoutId);
 
-    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
-    const data = await res.json();
-    const valid = (data.ac || []).filter(ac => ac && Number.isFinite(ac.lat) && Number.isFinite(ac.lon) && ac.alt_baro !== "ground");
+    const valid = (data.ac || []).filter(
+      ac => ac && Number.isFinite(ac.lat) && Number.isFinite(ac.lon) && ac.alt_baro !== "ground"
+    );
     
     const activeFlights = store.processTelemetry(valid);
     renderer.renderBoard(activeFlights);
 
     if (activeFlights.length === 0 && statusEl) {
-      statusEl.innerText = `API Connected: 0 planes in spatial box (${valid.length} raw nearby) · ${timestamp}`;
+      statusEl.innerText = `API Connected: 0 in spatial box (${valid.length} raw nearby) · Updated ${timestamp}`;
       statusEl.className = "text-center py-12 text-slate-400 font-mono text-xs px-4";
     }
 
-    const topRareContact = activeFlights.find(ac => ac.scoreMeta?.tier === "RARE" || ac.scoreMeta?.tier === "UNCOMMON");
+    const topRareContact = activeFlights.find(
+      ac => ac.scoreMeta?.tier === "RARE" || ac.scoreMeta?.tier === "UNCOMMON"
+    );
     if (topRareContact) {
       renderer.showRareAlertBanner(topRareContact);
     } else {
